@@ -34,17 +34,19 @@ def find_contaminated_examples(conf, training_examples, training_embeddings, eva
     return contaminated_examples
 
 
-def compute_embeddings(model, examples, prompt, batch_size, show_progress_bar):
+def compute_embeddings(model, examples, conf, dataset_conf):
     """
     Compute embeddings for a list of examples.
     Load from cache if its available.
     """
     
-    cache_path = f"cache/{prompt.replace(' ', '_')}.npy"
+    cache_path = os.path.join(conf.embedding.cache_dir, conf.embedding.model.replace("/", "_"), dataset_conf.args['path'].replace('/', '_') + ".npy")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    
     if os.path.exists(cache_path):
         embeddings = np.load(cache_path)
     else:
-        embeddings = model.encode(examples, prompt=prompt, batch_size=batch_size, show_progress_bar=show_progress_bar)
+        embeddings = model.encode(examples, prompt=conf.embedding.prompt, batch_size=conf.embedding.batch_size, show_progress_bar=conf.debug)
         np.save(cache_path, embeddings)
 
     return embeddings
@@ -57,12 +59,12 @@ def process_datasets(conf, model, training_dataset_conf, evaluation_dataset_conf
     # Load and process training dataset
     training_dataset = load_dataset(**training_dataset_conf.args)#.shuffle().select(range(1000))
     training_examples = [jmespath.search(training_dataset_conf.prompt_jmespath, example) for example in training_dataset]
-    training_embeddings = compute_embeddings(model, training_examples, conf.embedding.prompt, conf.embedding.batch_size, conf.debug)
+    training_embeddings = compute_embeddings(model, training_examples, conf, training_dataset_conf)
 
     # Load and process evaluation dataset
     evaluation_dataset = load_dataset(**evaluation_dataset_conf.args)
     evaluation_examples = [jmespath.search(evaluation_dataset_conf.prompt_jmespath, example) for example in evaluation_dataset]
-    evaluation_embeddings = compute_embeddings(model, evaluation_examples, conf.embedding.prompt, conf.embedding.batch_size, conf.debug)
+    evaluation_embeddings = compute_embeddings(model, evaluation_examples, conf, evaluation_dataset_conf)
 
     # Identify contaminated examples
     contaminated_examples = find_contaminated_examples(conf, training_examples, training_embeddings, evaluation_examples, evaluation_embeddings)

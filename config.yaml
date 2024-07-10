@@ -4,6 +4,7 @@ output_dir: output
 embedding:
   model: hkunlp/instructor-large
   # model: sentence-transformers/all-MiniLM-L6-v2
+  cache_dir: cache
   batch_size: 128
   similarity_threshold: 0.91
   prompt: "Represent the prompt for duplicate detection"
