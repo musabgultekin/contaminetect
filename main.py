@@ -62,7 +62,7 @@ def process_datasets(conf, model, training_dataset_conf, evaluation_dataset_conf
     # Load and process evaluation dataset
     evaluation_dataset = load_dataset(**evaluation_dataset_conf.args)
     evaluation_examples = [jmespath.search(evaluation_dataset_conf.prompt_jmespath, example) for example in evaluation_dataset]
-    evaluation_embeddings = model.encode(evaluation_examples, prompt=conf.embedding.prompt, batch_size=conf.embedding.batch_size, show_progress_bar=conf.debug)
+    evaluation_embeddings = compute_embeddings(model, evaluation_examples, conf.embedding.prompt, conf.embedding.batch_size, conf.debug)
 
     # Identify contaminated examples
     contaminated_examples = find_contaminated_examples(conf, training_examples, training_embeddings, evaluation_examples, evaluation_embeddings)
