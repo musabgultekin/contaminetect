@@ -2,3 +2,4 @@ datasets==2.20.0
 jmespath
 fire
 sentence_transformers
+omegaconf
