@@ -2,22 +2,23 @@ debug: True
 output_dir: output
 
 embedding:
-  model: hkunlp/instructor-large
-  # model: sentence-transformers/all-MiniLM-L6-v2
+  # model: hkunlp/instructor-large
+  # model: all-mpnet-base-v2
+  # model: sentence-transformers/all-MiniLM-L6-v2 # 23M param
+  model: nomic-ai/nomic-embed-text-v1 # 137M param
   cache_dir: cache
   batch_size: 128
-  similarity_threshold: 0.91
-  prompt: "Represent the prompt for duplicate detection"
+  max_seq_length: 512
+  # batch_size: 8
+  # max_seq_length: 8192
+  similarity_threshold: 0.9
+  # prompt: "Represent the prompt for duplicate detection"
 
 training_datasets:
   - args:
       path: teknium/OpenHermes-2.5
       split: train
     prompt_jmespath: "conversations[0].value"
-  # - args:
-  #     path: cognitivecomputations/dolphin-2.9.3
-  #     split: train
-  #   prompt_jmespath: "conversations[0].value"
   # - args:
   #     path: deepmind/aqua_rat
   #     name: raw

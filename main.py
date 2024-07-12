@@ -7,9 +7,10 @@ import numpy as np
 import fire
 from omegaconf import OmegaConf
 import jmespath
+import torch
 
 
-def find_contaminated_examples(conf, training_examples, training_embeddings, evaluation_examples, evaluation_embeddings):
+def find_contaminated_examples(conf, model: SentenceTransformer, training_examples, training_embeddings, evaluation_examples, evaluation_embeddings):
     """
     Find contaminated examples and return them sorted by similarity.
     """
@@ -17,7 +18,7 @@ def find_contaminated_examples(conf, training_examples, training_embeddings, eva
     
     # Calculate similarity and identify contamination
     for i, evaluation_embedding in enumerate(evaluation_embeddings):
-        similarity = np.dot(evaluation_embedding, training_embeddings.T)
+        similarity = model.similarity(evaluation_embedding, training_embeddings)
         max_idx = similarity.argmax().item()
         max_similarity = similarity.max().item()
         
@@ -34,22 +35,45 @@ def find_contaminated_examples(conf, training_examples, training_embeddings, eva
     return contaminated_examples
 
 
-def compute_embeddings(model, examples, conf, dataset_conf):
+def compute_embeddings(model: SentenceTransformer, examples, conf, dataset_conf):
     """
     Compute embeddings for a list of examples.
     Load from cache if its available.
     """
     
-    cache_path = os.path.join(conf.embedding.cache_dir, conf.embedding.model.replace("/", "_"), dataset_conf.args['path'].replace('/', '_') + ".npy")
+    cache_path = os.path.join(conf.embedding.cache_dir, conf.embedding.model.replace("/", "_"), dataset_conf.args['path'].replace('/', '_') + ".pt")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     
     if os.path.exists(cache_path):
-        embeddings = np.load(cache_path)
+        embeddings = torch.load(cache_path)
     else:
-        embeddings = model.encode(examples, prompt=conf.embedding.prompt, batch_size=conf.embedding.batch_size, show_progress_bar=conf.debug)
-        np.save(cache_path, embeddings)
+        embeddings = model.encode(
+            examples,
+            prompt=conf.embedding.prompt,
+            batch_size=conf.embedding.batch_size,
+            show_progress_bar=conf.debug,
+            convert_to_numpy=False,
+            convert_to_tensor=True
+        )
+        assert isinstance(embeddings, torch.Tensor)
+        torch.save(embeddings, cache_path)
 
     return embeddings
+
+dataset_cache = {}
+
+def process_dataset(conf, model, dataset_conf):
+    """
+    Load a dataset, compute embeddings, and return them.
+    """
+    if dataset_conf.args['path'] in dataset_cache:
+        return dataset_cache[dataset_conf.args['path']]
+    else:
+        dataset = load_dataset(**dataset_conf.args)
+        examples = [jmespath.search(dataset_conf.prompt_jmespath, example) for example in dataset]
+        embeddings = compute_embeddings(model, examples, conf, dataset_conf)
+        dataset_cache[dataset_conf.args['path']] = (examples, embeddings)
+        return examples, embeddings
 
 
 def process_datasets(conf, model, training_dataset_conf, evaluation_dataset_conf):
@@ -57,17 +81,11 @@ def process_datasets(conf, model, training_dataset_conf, evaluation_dataset_conf
     Load datasets and compute contamination between them.
     """
     # Load and process training dataset
-    training_dataset = load_dataset(**training_dataset_conf.args)#.shuffle().select(range(1000))
-    training_examples = [jmespath.search(training_dataset_conf.prompt_jmespath, example) for example in training_dataset]
-    training_embeddings = compute_embeddings(model, training_examples, conf, training_dataset_conf)
-
-    # Load and process evaluation dataset
-    evaluation_dataset = load_dataset(**evaluation_dataset_conf.args)
-    evaluation_examples = [jmespath.search(evaluation_dataset_conf.prompt_jmespath, example) for example in evaluation_dataset]
-    evaluation_embeddings = compute_embeddings(model, evaluation_examples, conf, evaluation_dataset_conf)
+    training_examples, training_embeddings = process_dataset(conf, model, training_dataset_conf)
+    evaluation_examples, evaluation_embeddings = process_dataset(conf, model, evaluation_dataset_conf)
 
     # Identify contaminated examples
-    contaminated_examples = find_contaminated_examples(conf, training_examples, training_embeddings, evaluation_examples, evaluation_embeddings)
+    contaminated_examples = find_contaminated_examples(conf, model, training_examples, training_embeddings, evaluation_examples, evaluation_embeddings)
     
     # Compute contamination percentage
     contamination_percentage = (len(contaminated_examples) / len(evaluation_examples)) * 100
@@ -104,7 +122,8 @@ def main():
     conf = OmegaConf.load("config.yaml")
     
     # Initialize the sentence transformer model
-    model = SentenceTransformer(conf.embedding.model)
+    model = SentenceTransformer(conf.embedding.model, trust_remote_code=True)
+    model.max_seq_length = conf.embedding.max_seq_length
     
     # Ensure the output directory exists
     os.makedirs(conf.output_dir, exist_ok=True)
